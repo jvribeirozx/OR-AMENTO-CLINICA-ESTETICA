@@ -1,284 +1,228 @@
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import Header from '../components/Header';
+import { store, fmt, STATUS_LABEL, PROC_CATEGORIES } from '../store';
 
 // ─────────────────────────────────────────────
-//  Componente de impressão de orçamento
+//  Helpers
+// ─────────────────────────────────────────────
+const S = {
+  card:   { background:'white', borderRadius:14, border:'1px solid var(--border)', overflow:'hidden' },
+  th:     { padding:'12px 18px', textAlign:'left', fontSize:11, textTransform:'uppercase', letterSpacing:'0.08em', color:'var(--light)', fontWeight:600, borderBottom:'1px solid var(--border)', whiteSpace:'nowrap' },
+  td:     { padding:'14px 18px', borderBottom:'1px solid var(--warm)', verticalAlign:'middle' },
+  inp:    { width:'100%', padding:'10px 13px', borderRadius:8, border:'1.5px solid var(--border)', background:'var(--bg)', fontSize:13, color:'var(--dark)', outline:'none' },
+  label:  { display:'block', fontSize:11, fontWeight:600, color:'var(--mid)', marginBottom:5, textTransform:'uppercase', letterSpacing:'0.05em' },
+  btnPri: { padding:'9px 20px', borderRadius:8, border:'none', background:'var(--caramel)', color:'white', fontSize:13, fontWeight:600, cursor:'pointer' },
+  btnSec: { padding:'9px 16px', borderRadius:8, border:'1.5px solid var(--border)', background:'white', color:'var(--mid)', fontSize:12, fontWeight:500, cursor:'pointer' },
+  btnDel: { padding:'7px 12px', borderRadius:7, border:'1.5px solid var(--red-bg)', background:'var(--red-bg)', color:'var(--red)', fontSize:12, fontWeight:500, cursor:'pointer' },
+};
+
+function Modal({ title, onClose, children }) {
+  return (
+    <div style={{ position:'fixed', inset:0, zIndex:500, background:'rgba(0,0,0,.45)', display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ background:'white', borderRadius:16, width:'100%', maxWidth:560, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 24px 64px rgba(0,0,0,.2)' }}>
+        <div style={{ background:'var(--dark)', padding:'18px 24px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <span style={{ fontFamily:'Cormorant Garamond,serif', fontSize:19, color:'white', fontWeight:500 }}>{title}</span>
+          <button onClick={onClose} style={{ background:'transparent', border:'none', color:'var(--light)', fontSize:18, cursor:'pointer' }}>✕</button>
+        </div>
+        <div style={{ padding:28 }}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }) {
+  return <div style={{ marginBottom:16 }}><label style={S.label}>{label}</label>{children}</div>;
+}
+
+function MiniInput({ label, value, onChange, placeholder, type='text' }) {
+  return (
+    <div>
+      <label style={{ ...S.label, fontSize:10 }}>{label}</label>
+      <input type={type} value={value} onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={{ ...S.inp, padding:'8px 10px', fontSize:12 }}
+        onFocus={e => e.target.style.borderColor='var(--caramel)'}
+        onBlur={e  => e.target.style.borderColor='var(--border)'} />
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+//  Print Modal
 // ─────────────────────────────────────────────
 function PrintModal({ order, onClose }) {
   const handlePrint = () => {
     const el = document.getElementById('print-doc');
-    // Inject print-specific styles that suppress browser headers/footers
     const style = document.createElement('style');
-    style.id = '__print_style__';
-    style.innerHTML = `
-      @media print {
-        @page { margin: 12mm; size: A4; }
-        body > *:not(#__print_root__) { display: none !important; }
-        #__print_root__ { display: block !important; }
-      }
-    `;
+    style.id = '__ps__';
+    style.innerHTML = `@media print { @page { margin:12mm; size:A4; } body > *:not(#__pr__){ display:none!important; } #__pr__{ display:block!important; } }`;
     document.head.appendChild(style);
-
-    // Create a hidden print container
     const container = document.createElement('div');
-    container.id = '__print_root__';
-    container.style.cssText = 'display:none;position:fixed;inset:0;background:white;z-index:99999;font-family:DM Sans,sans-serif;';
+    container.id = '__pr__';
+    container.style.cssText = 'display:none;position:fixed;inset:0;background:white;z-index:99999;font-family:DM Sans,sans-serif;padding:32px 40px;';
     container.innerHTML = el.innerHTML;
     document.body.appendChild(container);
-
-    // Show it only during print
-    const beforePrint = () => { container.style.display = 'block'; };
-    const afterPrint  = () => {
-      container.style.display = 'none';
-      document.body.removeChild(container);
-      const s = document.getElementById('__print_style__');
-      if (s) s.remove();
-      window.removeEventListener('beforeprint', beforePrint);
-      window.removeEventListener('afterprint',  afterPrint);
+    const before = () => { container.style.display = 'block'; };
+    const after  = () => {
+      container.remove();
+      document.getElementById('__ps__')?.remove();
+      window.removeEventListener('beforeprint', before);
+      window.removeEventListener('afterprint',  after);
     };
-    window.addEventListener('beforeprint', beforePrint);
-    window.addEventListener('afterprint',  afterPrint);
+    window.addEventListener('beforeprint', before);
+    window.addEventListener('afterprint',  after);
     window.print();
   };
-
-  const fmtV = v => v.toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
+  const fmtV = v => Number(v||0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
   const today = new Date().toLocaleDateString('pt-BR');
 
   return (
-    <div style={{
-      position:'fixed', inset:0, zIndex:1000,
-      background:'rgba(0,0,0,0.55)', display:'flex',
-      alignItems:'flex-start', justifyContent:'center',
-      padding:'32px 16px', overflowY:'auto',
-    }} onClick={e => { if(e.target===e.currentTarget) onClose(); }}>
-
-      <div style={{ background:'white', borderRadius:16, width:'100%', maxWidth:720,
-        boxShadow:'0 24px 64px rgba(0,0,0,.25)', overflow:'hidden' }}>
-
-        {/* Modal header */}
-        <div style={{ background:'#2C2416', padding:'18px 28px',
-          display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-          <div style={{ fontFamily:'Cormorant Garamond,serif', fontSize:20, color:'white', fontWeight:500 }}>
-            Orçamento #{order.id}
-          </div>
+    <div style={{ position:'fixed', inset:0, zIndex:1000, background:'rgba(0,0,0,.55)', display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'28px 16px', overflowY:'auto' }}
+      onClick={e => e.target===e.currentTarget && onClose()}>
+      <div style={{ background:'white', borderRadius:16, width:'100%', maxWidth:720, boxShadow:'0 24px 64px rgba(0,0,0,.25)', overflow:'hidden' }}>
+        <div style={{ background:'#2C2416', padding:'16px 24px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <span style={{ fontFamily:'Cormorant Garamond,serif', fontSize:19, color:'white', fontWeight:500 }}>Orçamento #{order.id}</span>
           <div style={{ display:'flex', gap:10 }}>
-            <button onClick={handlePrint} style={{
-              padding:'8px 20px', borderRadius:8, border:'none',
-              background:'#C8873A', color:'white', fontSize:13, fontWeight:600, cursor:'pointer',
-            }}>🖨 Imprimir / Salvar PDF</button>
-            <button onClick={onClose} style={{
-              padding:'8px 14px', borderRadius:8,
-              border:'1px solid rgba(255,255,255,.2)', background:'transparent',
-              color:'white', fontSize:13, cursor:'pointer',
-            }}>✕ Fechar</button>
+            <button onClick={handlePrint} style={{ ...S.btnPri }}>🖨 Imprimir / PDF</button>
+            <button onClick={onClose} style={{ padding:'9px 14px', borderRadius:8, border:'1px solid rgba(255,255,255,.2)', background:'transparent', color:'white', fontSize:13, cursor:'pointer' }}>✕</button>
           </div>
         </div>
-
-        {/* Documento imprimível */}
-        <div id="print-doc" style={{ padding:'36px 40px', fontFamily:'DM Sans, sans-serif' }}>
-
-          {/* Cabeçalho do doc */}
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:28, paddingBottom:20, borderBottom:'2px solid #C8873A' }}>
+        <div id="print-doc" style={{ padding:'32px 36px', fontFamily:'DM Sans,sans-serif' }}>
+          {/* Header doc */}
+          <div style={{ display:'flex', justifyContent:'space-between', marginBottom:24, paddingBottom:18, borderBottom:'2px solid #C8873A' }}>
             <div>
-              <div style={{ fontFamily:'Cormorant Garamond,serif', fontSize:28, fontWeight:600, color:'#2C2416', marginBottom:4 }}>
-                Clínica Estética
-              </div>
+              <div style={{ fontFamily:'Cormorant Garamond,serif', fontSize:26, fontWeight:600, color:'#2C2416' }}>Clínica Estética</div>
               <div style={{ fontSize:12, color:'#A08B74' }}>Sistema de Orçamentos</div>
             </div>
             <div style={{ textAlign:'right' }}>
-              <div style={{ fontSize:11, color:'#A08B74', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:4 }}>Orçamento</div>
-              <div style={{ fontFamily:'Cormorant Garamond,serif', fontSize:24, fontWeight:600, color:'#C8873A' }}>#{order.id}</div>
-              <div style={{ fontSize:12, color:'#A08B74', marginTop:4 }}>Emitido em {order.createdAt}</div>
-              <div style={{ fontSize:12, color:'#A08B74' }}>Validade: 30 dias</div>
+              <div style={{ fontSize:10, color:'#A08B74', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:3 }}>Orçamento</div>
+              <div style={{ fontFamily:'Cormorant Garamond,serif', fontSize:22, fontWeight:600, color:'#C8873A' }}>#{order.id}</div>
+              <div style={{ fontSize:11, color:'#A08B74', marginTop:3 }}>Emitido em {order.createdAt} · Validade 30 dias</div>
             </div>
           </div>
-
-          {/* Dados do paciente */}
-          <div style={{ marginBottom:24 }}>
-            <div style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.1em', color:'#A08B74', fontWeight:600, marginBottom:10 }}>Paciente</div>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'8px 24px' }}>
-              {[
-                ['Nome', order.client.name],
-                ['CPF', order.client.cpf],
-                ['Telefone', order.client.phone],
-                ['E-mail', order.client.email],
-                ['Responsável', order.employee],
-                ['Data', order.createdAt],
-              ].map(([k,v]) => (
-                <div key={k}>
-                  <div style={{ fontSize:10, color:'#A08B74', fontWeight:600, marginBottom:2 }}>{k}</div>
-                  <div style={{ fontSize:13, color:'#2C2416', fontWeight:500 }}>{v}</div>
-                </div>
+          {/* Paciente */}
+          <div style={{ marginBottom:20 }}>
+            <div style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.1em', color:'#A08B74', fontWeight:600, marginBottom:8 }}>Paciente</div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'6px 20px' }}>
+              {[['Nome',order.client.name],['CPF',order.client.cpf],['Telefone',order.client.phone],['E-mail',order.client.email],['Responsável',order.employee]].map(([k,v])=>(
+                <div key={k}><div style={{ fontSize:10, color:'#A08B74', marginBottom:2 }}>{k}</div><div style={{ fontSize:13, color:'#2C2416', fontWeight:500 }}>{v}</div></div>
               ))}
             </div>
           </div>
-
-          <div style={{ height:1, background:'#E8DDD0', marginBottom:24 }} />
-
+          <div style={{ height:1, background:'#E8DDD0', marginBottom:20 }} />
           {/* Procedimentos */}
-          <div style={{ marginBottom:24 }}>
-            <div style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.1em', color:'#A08B74', fontWeight:600, marginBottom:10 }}>Procedimentos</div>
+          <div style={{ marginBottom:20 }}>
+            <div style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.1em', color:'#A08B74', fontWeight:600, marginBottom:8 }}>Procedimentos</div>
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
-              <thead>
-                <tr style={{ background:'#F5EDE0' }}>
-                  <th style={{ padding:'9px 12px', textAlign:'left', fontSize:11, color:'#6B5B47', fontWeight:600 }}>Procedimento</th>
-                  <th style={{ padding:'9px 12px', textAlign:'left', fontSize:11, color:'#6B5B47', fontWeight:600 }}>Categoria</th>
-                  <th style={{ padding:'9px 12px', textAlign:'right', fontSize:11, color:'#6B5B47', fontWeight:600 }}>Valor</th>
-                </tr>
-              </thead>
-              <tbody>
-                {order.items.map((item, i) => (
-                  <tr key={item.id} style={{ background: i%2===0 ? 'white' : '#FAF7F2' }}>
-                    <td style={{ padding:'9px 12px', fontSize:13, color:'#2C2416' }}>{item.name}</td>
-                    <td style={{ padding:'9px 12px', fontSize:12, color:'#6B5B47' }}>{item.category}</td>
-                    <td style={{ padding:'9px 12px', textAlign:'right', fontSize:13, color:'#6B5B47' }}>{fmtV(item.price)}</td>
-                  </tr>
+              <thead><tr style={{ background:'#F5EDE0' }}>
+                {['Procedimento','Categoria','Valor'].map(h=>(
+                  <th key={h} style={{ padding:'8px 10px', textAlign: h==='Valor'?'right':'left', fontSize:11, color:'#6B5B47', fontWeight:600 }}>{h}</th>
                 ))}
-              </tbody>
+              </tr></thead>
+              <tbody>{order.items.map((item,i)=>(
+                <tr key={item.id} style={{ background:i%2===0?'white':'#FAF7F2' }}>
+                  <td style={{ padding:'8px 10px', fontSize:13, color:'#2C2416' }}>{item.name}</td>
+                  <td style={{ padding:'8px 10px', fontSize:12, color:'#6B5B47' }}>{item.category}</td>
+                  <td style={{ padding:'8px 10px', textAlign:'right', fontSize:13, color:'#6B5B47' }}>—</td>
+                </tr>
+              ))}</tbody>
             </table>
           </div>
-
           {/* Hospital */}
           {order.hospital && (
-            <div style={{ marginBottom:24 }}>
-              <div style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.1em', color:'#A08B74', fontWeight:600, marginBottom:10 }}>Hospital</div>
-              <div style={{ background:'#FAF7F2', borderRadius:8, padding:'12px 16px', display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'8px 24px' }}>
-                <div>
-                  <div style={{ fontSize:10, color:'#A08B74', marginBottom:2 }}>Hospital</div>
-                  <div style={{ fontSize:13, color:'#2C2416', fontWeight:500 }}>{order.hospital.name}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize:10, color:'#A08B74', marginBottom:2 }}>Pagamento</div>
-                  <div style={{ fontSize:13, color:'#2C2416', fontWeight:500 }}>{order.hospital.payType}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize:10, color:'#A08B74', marginBottom:2 }}>Pernoite</div>
-                  <div style={{ fontSize:13, color:'#2C2416', fontWeight:500 }}>{order.hospital.pernoite ? 'Com pernoite' : 'Sem pernoite'}</div>
-                </div>
+            <div style={{ marginBottom:20 }}>
+              <div style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.1em', color:'#A08B74', fontWeight:600, marginBottom:8 }}>Hospital</div>
+              <div style={{ background:'#FAF7F2', borderRadius:8, padding:'10px 14px', display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'6px 20px' }}>
+                {[['Hospital',order.hospital.name],['Pagamento',order.hospital.payType],['Pernoite',order.hospital.pernoite?'Com pernoite':'Sem pernoite'],['Valor',fmtV(order.hospital.valor)]].map(([k,v])=>(
+                  <div key={k}><div style={{ fontSize:10, color:'#A08B74', marginBottom:2 }}>{k}</div><div style={{ fontSize:13, color:'#2C2416', fontWeight:500 }}>{v}</div></div>
+                ))}
               </div>
             </div>
           )}
-
           {/* Anestesia */}
           {order.anestesia && (
-            <div style={{ marginBottom:24 }}>
-              <div style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.1em', color:'#A08B74', fontWeight:600, marginBottom:10 }}>Anestesia</div>
-              <div style={{ background:'#FAF7F2', borderRadius:8, padding:'12px 16px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px 24px' }}>
-                <div>
-                  <div style={{ fontSize:10, color:'#A08B74', marginBottom:2 }}>Tempo</div>
-                  <div style={{ fontSize:13, color:'#2C2416', fontWeight:500 }}>{order.anestesia.tempo}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize:10, color:'#A08B74', marginBottom:2 }}>Pagamento</div>
-                  <div style={{ fontSize:13, color:'#2C2416', fontWeight:500 }}>{order.anestesia.payType}</div>
-                </div>
+            <div style={{ marginBottom:20 }}>
+              <div style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.1em', color:'#A08B74', fontWeight:600, marginBottom:8 }}>Anestesia</div>
+              <div style={{ background:'#FAF7F2', borderRadius:8, padding:'10px 14px', display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'6px 20px' }}>
+                {[['Tempo',order.anestesia.tempo],['Pagamento',order.anestesia.payType],['Valor',fmtV(order.anestesia.valor)]].map(([k,v])=>(
+                  <div key={k}><div style={{ fontSize:10, color:'#A08B74', marginBottom:2 }}>{k}</div><div style={{ fontSize:13, color:'#2C2416', fontWeight:500 }}>{v}</div></div>
+                ))}
               </div>
             </div>
           )}
-
           {/* Totais */}
-          <div style={{ background:'#2C2416', borderRadius:10, padding:'16px 20px', marginBottom:28 }}>
-            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-              <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:'rgba(255,255,255,.6)' }}>
-                <span>Procedimentos</span>
-                <span>{fmtV(order.items.reduce((s,i)=>s+i.price,0))}</span>
-              </div>
-              {order.hospital && (
-                <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:'rgba(255,255,255,.6)' }}>
-                  <span>Hospital</span><span>{fmtV(order.hospital.valor)}</span>
-                </div>
-              )}
-              {order.anestesia && (
-                <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:'rgba(255,255,255,.6)' }}>
-                  <span>Anestesia</span><span>{fmtV(order.anestesia.valor)}</span>
-                </div>
-              )}
-              <div style={{ height:1, background:'rgba(255,255,255,.15)', margin:'4px 0' }} />
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                <span style={{ fontSize:14, color:'rgba(255,255,255,.8)', fontWeight:600 }}>TOTAL GERAL</span>
-                <span style={{ fontFamily:'Cormorant Garamond,serif', fontSize:24, fontWeight:600, color:'#E8A55A' }}>{fmtV(order.total)}</span>
-              </div>
+          <div style={{ background:'#2C2416', borderRadius:10, padding:'14px 18px', marginBottom:24 }}>
+            {[
+              ['Procedimentos', '—'],
+              ...(order.hospital  ? [['Hospital',  fmtV(order.hospital.valor)]]  : []),
+              ...(order.anestesia ? [['Anestesia', fmtV(order.anestesia.valor)]] : []),
+            ].map(([k,v])=>(
+              <div key={k} style={{ display:'flex', justifyContent:'space-between', fontSize:12, color:'rgba(255,255,255,.6)', marginBottom:6 }}><span>{k}</span><span>{v}</span></div>
+            ))}
+            <div style={{ height:1, background:'rgba(255,255,255,.15)', margin:'8px 0' }} />
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <span style={{ fontSize:13, color:'rgba(255,255,255,.8)', fontWeight:600 }}>TOTAL GERAL</span>
+              <span style={{ fontFamily:'Cormorant Garamond,serif', fontSize:22, fontWeight:600, color:'#E8A55A' }}>{fmtV(order.total)}</span>
             </div>
           </div>
-
-          {/* Observações */}
-          {order.obs && (
-            <div style={{ marginBottom:24 }}>
-              <div style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.1em', color:'#A08B74', fontWeight:600, marginBottom:8 }}>Observações</div>
-              <div style={{ background:'#FAF7F2', borderRadius:8, padding:'12px 16px', fontSize:13, color:'#6B5B47', lineHeight:1.7 }}>{order.obs}</div>
-            </div>
-          )}
-
-          {/* Área de assinatura */}
-          <div style={{ borderTop:'1px solid #E8DDD0', paddingTop:24 }}>
-            <div style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.1em', color:'#A08B74', fontWeight:600, marginBottom:16 }}>Assinatura</div>
+          {/* Assinatura */}
+          <div style={{ borderTop:'1px solid #E8DDD0', paddingTop:20 }}>
+            <div style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.1em', color:'#A08B74', fontWeight:600, marginBottom:14 }}>Assinatura</div>
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:32 }}>
-              {/* Cliente */}
-              <div>
-                <div style={{ height:64, borderBottom:'1.5px solid #2C2416', marginBottom:10 }} />
-                <div style={{ fontSize:12, color:'#6B5B47', marginBottom:3 }}>{order.client.name}</div>
-                <div style={{ fontSize:11, color:'#A08B74' }}>Paciente — CPF: {order.client.cpf}</div>
-                <div style={{ fontSize:11, color:'#A08B74', marginTop:4 }}>Data: _____ / _____ / _______</div>
-              </div>
-              {/* Responsável */}
-              <div>
-                <div style={{ height:64, borderBottom:'1.5px solid #2C2416', marginBottom:10 }} />
-                <div style={{ fontSize:12, color:'#6B5B47', marginBottom:3 }}>{order.employee}</div>
-                <div style={{ fontSize:11, color:'#A08B74' }}>Responsável pelo atendimento</div>
-                <div style={{ fontSize:11, color:'#A08B74', marginTop:4 }}>Data: _____ / _____ / _______</div>
-              </div>
+              {[[order.client.name, `Paciente — CPF: ${order.client.cpf}`],[order.employee,'Responsável pelo atendimento']].map(([name,role])=>(
+                <div key={name}><div style={{ height:56, borderBottom:'1.5px solid #2C2416', marginBottom:8 }} /><div style={{ fontSize:12, color:'#6B5B47', marginBottom:2 }}>{name}</div><div style={{ fontSize:11, color:'#A08B74' }}>{role}</div><div style={{ fontSize:11, color:'#A08B74', marginTop:4 }}>Data: _____ / _____ / _______</div></div>
+              ))}
             </div>
           </div>
-
-          {/* Rodapé */}
-          <div style={{ marginTop:28, paddingTop:14, borderTop:'1px solid #E8DDD0', textAlign:'center' }}>
-            <div style={{ fontSize:11, color:'#A08B74' }}>
-              Clínica Estética — Documento gerado em {today} — Válido por 30 dias
-            </div>
+          <div style={{ marginTop:24, paddingTop:12, borderTop:'1px solid #E8DDD0', textAlign:'center', fontSize:11, color:'#A08B74' }}>
+            Clínica Estética — Documento gerado em {today} — Válido por 30 dias
           </div>
-
         </div>
       </div>
     </div>
   );
 }
 
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import Header from '../components/Header';
-import { store, fmt, STATUS_LABEL } from '../store';
-
+// ─────────────────────────────────────────────
+//  Main Component
+// ─────────────────────────────────────────────
 export default function AdminDashboard() {
   const navigate  = useNavigate();
   const location  = useLocation();
-  const [tab, setTab]           = useState('orders');
-  const [orders, setOrders]     = useState(store.getOrders());
-  const [procs, setProcs]       = useState(store.getProcedures());
-  const [search, setSearch]     = useState('');
-  const [editId, setEditId]     = useState(null);
-  const [editVal, setEditVal]   = useState('');
-  const [copied, setCopied]     = useState(null);
-  const [printOrder, setPrintOrder] = useState(null);
-  const [highlight, setHL]      = useState(null);
 
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const h = params.get('highlight');
-    const c = params.get('copied');
-    if (h) { setHL(h); setCopied(h); setTimeout(() => { setHL(null); setCopied(null); }, 4000); }
-  }, [location.search]);
+  const [tab,         setTab]         = useState('orders');
+  const [orders,      setOrders]      = useState(store.getOrders());
+  const [procs,       setProcs]       = useState(store.getProcedures());
+  const [hospitals,   setHospitals]   = useState(store.getHospitals());
+  const [pricing,     setPricing]     = useState(store.getPricing());
+  const [search,      setSearch]      = useState('');
+  const [copied,      setCopied]      = useState(null);
+  const [highlight,   setHL]          = useState(null);
+  const [printOrder,  setPrintOrder]  = useState(null);
 
-  const refresh = () => { setOrders(store.getOrders()); setProcs(store.getProcedures()); };
+  // Modals
+  const [procModal,   setProcModal]   = useState(null);   // null | 'new' | procedure obj
+  const [hospModal,   setHospModal]   = useState(null);   // null | 'new' | hospital obj
+  const [priceModal,  setPriceModal]  = useState(null);   // null | procedure obj
 
-  const savePrice = (id) => {
-    const p = parseFloat(editVal);
-    if (!isNaN(p) && p > 0) { store.updateProcedurePrice(id, p); refresh(); }
-    setEditId(null);
+  const refresh = () => {
+    setOrders(store.getOrders());
+    setProcs(store.getProcedures());
+    setHospitals(store.getHospitals());
+    setPricing(store.getPricing());
   };
 
+  useEffect(() => {
+    const p = new URLSearchParams(location.search);
+    const h = p.get('highlight'), cp = p.get('copied');
+    if (h) { setHL(h); if(cp) setCopied(h); setTimeout(()=>{ setHL(null); setCopied(null); },4000); }
+  }, [location.search]);
+
   const copyLink = (id) => {
-    const url = `${window.location.origin}/assinar/${id}`;
-    navigator.clipboard.writeText(url).then(() => {
-      setCopied(id); setTimeout(() => setCopied(null), 2500);
-    });
+    navigator.clipboard.writeText(`${window.location.origin}/assinar/${id}`)
+      .then(() => { setCopied(id); setTimeout(()=>setCopied(null),2500); });
   };
 
   const filteredOrders = orders.filter(o =>
@@ -286,45 +230,42 @@ export default function AdminDashboard() {
     o.client.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  const revenue  = orders.filter(o => o.status==='signed').reduce((s,o) => s+o.total, 0);
-  const signed   = orders.filter(o => o.status==='signed').length;
-  const sent     = orders.filter(o => o.status==='sent').length;
-  const drafts   = orders.filter(o => o.status==='draft').length;
+  const revenue = orders.filter(o=>o.status==='signed').reduce((s,o)=>s+o.total,0);
+  const stats = [
+    { label:'Receita confirmada', value:fmt(revenue),                              icon:'💰', bg:'#FFF3E4', ac:'var(--caramel)'  },
+    { label:'Assinados',          value:String(orders.filter(o=>o.status==='signed').length), icon:'✓',  bg:'var(--green-bg)', ac:'var(--green)'   },
+    { label:'Aguardando',         value:String(orders.filter(o=>o.status==='sent').length),   icon:'⏳', bg:'#FFF8EE',         ac:'var(--caramel2)'},
+    { label:'Rascunhos',          value:String(orders.filter(o=>o.status==='draft').length),  icon:'📋', bg:'var(--warm)',      ac:'var(--light)'   },
+  ];
 
-  const statCards = [
-    { label:'Receita confirmada', value:fmt(revenue),         icon:'💰', bg:'#FFF3E4', accent:'var(--caramel)' },
-    { label:'Assinados',          value:String(signed),       icon:'✓',  bg:'var(--green-bg)', accent:'var(--green)' },
-    { label:'Aguardando assinatura', value:String(sent),      icon:'⏳', bg:'#FFF8EE', accent:'var(--caramel2)' },
-    { label:'Rascunhos',          value:String(drafts),       icon:'📋', bg:'var(--warm)', accent:'var(--light)' },
+  const TABS = [
+    ['orders',     'Orçamentos',  orders.length],
+    ['procedures', 'Procedimentos', procs.length],
+    ['hospitals',  'Hospitais',   hospitals.length],
+    ['pricing',    'Tabela de Preços', pricing.length],
   ];
 
   return (
     <div style={{ minHeight:'100vh', background:'var(--bg)' }}>
-      <Header sub="Painel Administrativo" action={{ label:'+ Novo orçamento', onClick:() => navigate('/admin/novo') }} />
+      <Header sub="Painel Administrativo" action={{ label:'+ Novo orçamento', onClick:()=>navigate('/admin/novo') }} />
 
       <div style={{ maxWidth:1200, margin:'0 auto', padding:'32px 24px 64px' }}>
 
-        {/* Copied toast */}
+        {/* Toast */}
         {copied && (
-          <div className="fade-up" style={{
-            position:'fixed', bottom:28, right:28, zIndex:999,
-            background:'var(--dark)', color:'white', padding:'13px 22px',
-            borderRadius:10, fontSize:13, fontWeight:500,
-            boxShadow:'0 8px 32px rgba(0,0,0,.2)',
-            borderLeft:'4px solid var(--caramel)',
-          }}>
+          <div className="fade-up" style={{ position:'fixed', bottom:28, right:28, zIndex:999, background:'var(--dark)', color:'white', padding:'13px 22px', borderRadius:10, fontSize:13, fontWeight:500, boxShadow:'0 8px 32px rgba(0,0,0,.2)', borderLeft:'4px solid var(--caramel)' }}>
             ✓ Link copiado para a área de transferência
           </div>
         )}
 
         {/* Stats */}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:16, marginBottom:32 }}>
-          {statCards.map((s,i) => (
-            <div key={i} className="fade-up" style={{ animationDelay:`${i*.05}s`, background:'white', borderRadius:14, padding:20, border:'1px solid var(--border)', display:'flex', alignItems:'center', gap:16 }}>
-              <div style={{ width:44, height:44, borderRadius:12, background:s.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, flexShrink:0 }}>{s.icon}</div>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:16, marginBottom:28 }}>
+          {stats.map((s,i) => (
+            <div key={i} className="fade-up" style={{ animationDelay:`${i*.05}s`, background:'white', borderRadius:14, padding:18, border:'1px solid var(--border)', display:'flex', alignItems:'center', gap:14 }}>
+              <div style={{ width:42, height:42, borderRadius:12, background:s.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:19, flexShrink:0 }}>{s.icon}</div>
               <div>
-                <div style={{ fontFamily:'Cormorant Garamond,serif', fontSize:22, fontWeight:600, color:s.accent }}>{s.value}</div>
-                <div style={{ fontSize:12, color:'var(--mid)', marginTop:2 }}>{s.label}</div>
+                <div style={{ fontFamily:'Cormorant Garamond,serif', fontSize:22, fontWeight:600, color:s.ac }}>{s.value}</div>
+                <div style={{ fontSize:12, color:'var(--mid)', marginTop:1 }}>{s.label}</div>
               </div>
             </div>
           ))}
@@ -332,97 +273,54 @@ export default function AdminDashboard() {
 
         {/* Tabs */}
         <div style={{ display:'flex', gap:4, marginBottom:20, background:'white', padding:5, borderRadius:12, border:'1px solid var(--border)', width:'fit-content' }}>
-          {[['orders','Orçamentos',orders.length],['procedures','Procedimentos',procs.length]].map(([key,label,count]) => (
-            <button key={key} onClick={() => setTab(key)} style={{
-              padding:'9px 20px', borderRadius:9, border:'none',
-              background: tab===key ? 'var(--dark)' : 'transparent',
-              color: tab===key ? 'white' : 'var(--mid)',
-              fontSize:13, fontWeight:500, display:'flex', alignItems:'center', gap:8, transition:'all .2s',
+          {TABS.map(([key,label,count]) => (
+            <button key={key} onClick={()=>setTab(key)} style={{
+              padding:'8px 18px', borderRadius:9, border:'none', cursor:'pointer',
+              background:tab===key?'var(--dark)':'transparent',
+              color:tab===key?'white':'var(--mid)',
+              fontSize:13, fontWeight:500, display:'flex', alignItems:'center', gap:7, transition:'all .2s',
             }}>
               {label}
-              <span style={{ fontSize:11, padding:'2px 7px', borderRadius:10, background: tab===key ? 'rgba(255,255,255,.15)' : 'var(--warm)', color: tab===key ? 'rgba(255,255,255,.8)' : 'var(--mid)' }}>{count}</span>
+              <span style={{ fontSize:11, padding:'2px 7px', borderRadius:10, background:tab===key?'rgba(255,255,255,.15)':'var(--warm)', color:tab===key?'rgba(255,255,255,.8)':'var(--mid)' }}>{count}</span>
             </button>
           ))}
         </div>
 
-        {/* ORDERS */}
+        {/* ══ ORDERS ══ */}
         {tab === 'orders' && (
-          <div className="fade-in" style={{ background:'white', borderRadius:16, border:'1px solid var(--border)', overflow:'hidden' }}>
-            <div style={{ padding:'18px 24px', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:12 }}>
+          <div className="fade-in" style={S.card}>
+            <div style={{ padding:'16px 22px', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:10 }}>
               <h2 style={{ fontSize:20 }}>Orçamentos</h2>
-              <input
-                value={search} onChange={e => setSearch(e.target.value)}
-                placeholder="Buscar por cliente ou nº..."
-                style={{ padding:'9px 16px', borderRadius:8, border:'1.5px solid var(--border)', background:'var(--bg)', fontSize:13, outline:'none', width:240 }}
-              />
+              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por cliente ou nº..." style={{ ...S.inp, width:240 }} />
             </div>
             <div style={{ overflowX:'auto' }}>
               <table style={{ width:'100%', borderCollapse:'collapse' }}>
-                <thead>
-                  <tr>
-                    {['Nº','Paciente','Procedimentos','Total','Status','Data','Ações'].map(h => (
-                      <th key={h} style={{ padding:'13px 20px', textAlign:'left', fontSize:11, textTransform:'uppercase', letterSpacing:'0.08em', color:'var(--light)', fontWeight:600, borderBottom:'1px solid var(--border)', whiteSpace:'nowrap' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
+                <thead><tr>{['Nº','Paciente','Procedimentos','Total','Status','Data','Ações'].map(h=>(
+                  <th key={h} style={S.th}>{h}</th>
+                ))}</tr></thead>
                 <tbody>
-                  {filteredOrders.length === 0 ? (
+                  {filteredOrders.length===0 ? (
                     <tr><td colSpan={7} style={{ textAlign:'center', padding:48, color:'var(--light)', fontSize:14 }}>Nenhum orçamento encontrado</td></tr>
                   ) : filteredOrders.map(o => {
                     const st = STATUS_LABEL[o.status];
-                    const isHL = o.id === highlight;
                     return (
-                      <tr key={o.id} style={{ background: isHL ? '#FFFBF5' : 'transparent', transition:'background .3s' }}>
-                        <td style={{ padding:'16px 20px', borderBottom:'1px solid var(--warm)' }}>
-                          <span style={{ fontSize:12, fontWeight:700, color:'var(--caramel)', background:'#FFF3E4', padding:'4px 10px', borderRadius:6 }}>{o.id}</span>
-                        </td>
-                        <td style={{ padding:'16px 20px', borderBottom:'1px solid var(--warm)' }}>
-                          <div style={{ fontSize:14, fontWeight:500, color:'var(--dark)' }}>{o.client.name}</div>
-                          <div style={{ fontSize:12, color:'var(--light)', marginTop:2 }}>{o.client.email}</div>
-                        </td>
-                        <td style={{ padding:'16px 20px', borderBottom:'1px solid var(--warm)' }}>
-                          <div style={{ display:'flex', flexWrap:'wrap', gap:4, maxWidth:260 }}>
-                            {o.items.map(i => (
-                              <span key={i.id} style={{ fontSize:11, background:'var(--warm)', color:'var(--mid)', padding:'3px 8px', borderRadius:5 }}>{i.name}</span>
-                            ))}
-                          </div>
-                        </td>
-                        <td style={{ padding:'16px 20px', borderBottom:'1px solid var(--warm)', fontFamily:'Cormorant Garamond,serif', fontSize:16, fontWeight:600, color:'var(--caramel)', whiteSpace:'nowrap' }}>{fmt(o.total)}</td>
-                        <td style={{ padding:'16px 20px', borderBottom:'1px solid var(--warm)' }}>
-                          <span style={{ padding:'5px 12px', borderRadius:20, fontSize:12, fontWeight:600, background:st.bg, color:st.color, whiteSpace:'nowrap' }}>{st.label}</span>
-                        </td>
-                        <td style={{ padding:'16px 20px', borderBottom:'1px solid var(--warm)', fontSize:12, color:'var(--mid)', whiteSpace:'nowrap' }}>{o.createdAt}</td>
-                        <td style={{ padding:'16px 20px', borderBottom:'1px solid var(--warm)' }}>
-                          <div style={{ display:'flex', gap:6 }}>
-                            {o.status !== 'signed' && (
-                              <button
-                                onClick={() => copyLink(o.id)}
-                                style={{
-                                  padding:'6px 12px', borderRadius:7,
-                                  border: copied===o.id ? 'none' : '1.5px solid var(--border)',
-                                  background: copied===o.id ? 'var(--green-bg)' : 'white',
-                                  color: copied===o.id ? 'var(--green)' : 'var(--mid)',
-                                  fontSize:12, fontWeight:600, transition:'all .2s', whiteSpace:'nowrap',
-                                }}
-                              >
-                                {copied===o.id ? '✓ Copiado' : '🔗 Copiar link'}
+                      <tr key={o.id} style={{ background:o.id===highlight?'#FFFBF5':'transparent', transition:'background .3s' }}>
+                        <td style={S.td}><span style={{ fontSize:12, fontWeight:700, color:'var(--caramel)', background:'#FFF3E4', padding:'4px 10px', borderRadius:6 }}>{o.id}</span></td>
+                        <td style={S.td}><div style={{ fontSize:14, fontWeight:500 }}>{o.client.name}</div><div style={{ fontSize:12, color:'var(--light)', marginTop:2 }}>{o.client.email}</div></td>
+                        <td style={S.td}><div style={{ display:'flex', flexWrap:'wrap', gap:4, maxWidth:240 }}>{o.items.map(i=><span key={i.id} style={{ fontSize:11, background:'var(--warm)', color:'var(--mid)', padding:'3px 8px', borderRadius:5 }}>{i.name}</span>)}</div></td>
+                        <td style={{ ...S.td, fontFamily:'Cormorant Garamond,serif', fontSize:16, fontWeight:600, color:'var(--caramel)', whiteSpace:'nowrap' }}>{fmt(o.total)}</td>
+                        <td style={S.td}><span style={{ padding:'5px 12px', borderRadius:20, fontSize:12, fontWeight:600, background:st.bg, color:st.color, whiteSpace:'nowrap' }}>{st.label}</span></td>
+                        <td style={{ ...S.td, fontSize:12, color:'var(--mid)', whiteSpace:'nowrap' }}>{o.createdAt}</td>
+                        <td style={S.td}>
+                          <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                            {o.status!=='signed' && (
+                              <button onClick={()=>copyLink(o.id)} style={{ ...S.btnSec, background:copied===o.id?'var(--green-bg)':'white', color:copied===o.id?'var(--green)':'var(--mid)', borderColor:copied===o.id?'var(--green)':'var(--border)', whiteSpace:'nowrap' }}>
+                                {copied===o.id?'✓ Copiado':'🔗 Copiar link'}
                               </button>
                             )}
-                            <button
-                              onClick={() => setPrintOrder(o)}
-                              style={{ padding:'6px 12px', borderRadius:7, border:'1.5px solid var(--border)', background:'white', color:'var(--mid)', fontSize:12, fontWeight:600, transition:'all .2s', whiteSpace:'nowrap' }}
-                              onMouseOver={e => e.currentTarget.style.borderColor='var(--caramel)'}
-                              onMouseOut={e  => e.currentTarget.style.borderColor='var(--border)'}
-                            >
-                              🖨 Imprimir
-                            </button>
-                            <button
-                              onClick={() => navigate(`/assinar/${o.id}`)}
-                              style={{ padding:'6px 12px', borderRadius:7, border:'1.5px solid var(--border)', background:'white', color:'var(--mid)', fontSize:12, fontWeight:600, transition:'all .2s', whiteSpace:'nowrap' }}
-                              onMouseOver={e => e.currentTarget.style.borderColor='var(--caramel)'}
-                              onMouseOut={e  => e.currentTarget.style.borderColor='var(--border)'}
-                            >
-                              {o.status === 'signed' ? '👁 Ver' : '📄 Abrir'}
+                            <button onClick={()=>setPrintOrder(o)} style={{ ...S.btnSec, whiteSpace:'nowrap' }}>🖨 Imprimir</button>
+                            <button onClick={()=>navigate(`/assinar/${o.id}`)} style={{ ...S.btnSec, whiteSpace:'nowrap' }}>
+                              {o.status==='signed'?'👁 Ver':'📄 Abrir'}
                             </button>
                           </div>
                         </td>
@@ -435,63 +333,298 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* PROCEDURES */}
+        {/* ══ PROCEDURES ══ */}
         {tab === 'procedures' && (
-          <div className="fade-in" style={{ background:'white', borderRadius:16, border:'1px solid var(--border)', overflow:'hidden' }}>
-            <div style={{ padding:'18px 24px', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <div className="fade-in" style={S.card}>
+            <div style={{ padding:'16px 22px', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
               <h2 style={{ fontSize:20 }}>Procedimentos</h2>
-              <span style={{ fontSize:12, color:'var(--light)', background:'var(--warm)', padding:'6px 14px', borderRadius:6 }}>Clique no valor para editar o preço</span>
+              <button onClick={()=>setProcModal('new')} style={S.btnPri}>+ Novo procedimento</button>
             </div>
-            <div style={{ overflowX:'auto' }}>
-              <table style={{ width:'100%', borderCollapse:'collapse' }}>
-                <thead>
-                  <tr>
-                    {['Procedimento','Categoria','Descrição','Preço'].map(h => (
-                      <th key={h} style={{ padding:'13px 20px', textAlign:'left', fontSize:11, textTransform:'uppercase', letterSpacing:'0.08em', color:'var(--light)', fontWeight:600, borderBottom:'1px solid var(--border)' }}>{h}</th>
-                    ))}
+            <table style={{ width:'100%', borderCollapse:'collapse' }}>
+              <thead><tr>{['Procedimento','Categoria','Descrição','Ações'].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {procs.map(p=>(
+                  <tr key={p.id}>
+                    <td style={{ ...S.td, fontWeight:500, fontSize:14 }}>{p.name}</td>
+                    <td style={S.td}><span style={{ fontSize:11, fontWeight:600, background:'var(--warm)', color:'var(--mid)', padding:'4px 10px', borderRadius:6 }}>{p.category}</span></td>
+                    <td style={{ ...S.td, fontSize:12, color:'var(--mid)', maxWidth:220 }}>{p.desc}</td>
+                    <td style={S.td}>
+                      <div style={{ display:'flex', gap:6 }}>
+                        <button onClick={()=>setProcModal(p)} style={S.btnSec}>✎ Editar</button>
+                        <button onClick={()=>{ store.deleteProcedure(p.id); refresh(); }} style={S.btnDel}>Excluir</button>
+                      </div>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {procs.map(p => (
-                    <tr key={p.id}>
-                      <td style={{ padding:'16px 20px', borderBottom:'1px solid var(--warm)', fontSize:14, fontWeight:500, color:'var(--dark)' }}>{p.name}</td>
-                      <td style={{ padding:'16px 20px', borderBottom:'1px solid var(--warm)' }}>
-                        <span style={{ fontSize:11, fontWeight:600, background:'var(--warm)', color:'var(--mid)', padding:'4px 10px', borderRadius:6 }}>{p.category}</span>
-                      </td>
-                      <td style={{ padding:'16px 20px', borderBottom:'1px solid var(--warm)', fontSize:12, color:'var(--mid)', maxWidth:240 }}>{p.desc}</td>
-                      <td style={{ padding:'16px 20px', borderBottom:'1px solid var(--warm)' }}>
-                        {editId === p.id ? (
-                          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                            <span style={{ fontSize:13, color:'var(--mid)' }}>R$</span>
-                            <input
-                              autoFocus type="number" value={editVal}
-                              onChange={e => setEditVal(e.target.value)}
-                              onKeyDown={e => { if(e.key==='Enter') savePrice(p.id); if(e.key==='Escape') setEditId(null); }}
-                              style={{ width:90, padding:'6px 10px', borderRadius:7, border:'1.5px solid var(--caramel)', fontSize:14, fontWeight:600, outline:'none' }}
-                            />
-                            <button onClick={() => savePrice(p.id)} style={{ width:28, height:28, borderRadius:7, background:'var(--green)', color:'white', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center' }}>✓</button>
-                            <button onClick={() => setEditId(null)} style={{ width:28, height:28, borderRadius:7, border:'1px solid var(--border)', background:'white', color:'var(--mid)', fontSize:11, display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => { setEditId(p.id); setEditVal(String(p.price)); }}
-                            style={{ padding:'7px 14px', borderRadius:8, border:'1.5px solid var(--border)', background:'var(--bg)', color:'var(--caramel)', fontSize:14, fontWeight:700, display:'flex', alignItems:'center', gap:8, transition:'all .2s' }}
-                            onMouseOver={e => e.currentTarget.style.borderColor='var(--caramel)'}
-                            onMouseOut={e  => e.currentTarget.style.borderColor='var(--border)'}
-                          >
-                            {fmt(p.price)} <span style={{ fontSize:12, color:'var(--light)' }}>✎</span>
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
+
+        {/* ══ HOSPITALS ══ */}
+        {tab === 'hospitals' && (
+          <div className="fade-in" style={S.card}>
+            <div style={{ padding:'16px 22px', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <h2 style={{ fontSize:20 }}>Hospitais</h2>
+              <button onClick={()=>setHospModal('new')} style={S.btnPri}>+ Novo hospital</button>
+            </div>
+            <table style={{ width:'100%', borderCollapse:'collapse' }}>
+              <thead><tr>{['Hospital','Endereço','Ações'].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {hospitals.map(h=>(
+                  <tr key={h.id}>
+                    <td style={{ ...S.td, fontWeight:500, fontSize:14 }}>{h.name}</td>
+                    <td style={{ ...S.td, fontSize:13, color:'var(--mid)' }}>{h.address}</td>
+                    <td style={S.td}>
+                      <div style={{ display:'flex', gap:6 }}>
+                        <button onClick={()=>setHospModal(h)} style={S.btnSec}>✎ Editar</button>
+                        <button onClick={()=>{ store.deleteHospital(h.id); refresh(); }} style={S.btnDel}>Excluir</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* ══ PRICING ══ */}
+        {tab === 'pricing' && (
+          <div className="fade-in" style={S.card}>
+            <div style={{ padding:'16px 22px', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <h2 style={{ fontSize:20 }}>Tabela de Preços por Hospital</h2>
+              <span style={{ fontSize:12, color:'var(--light)', background:'var(--warm)', padding:'6px 14px', borderRadius:6 }}>
+                Clique em "Gerenciar" para editar os preços de cada procedimento
+              </span>
+            </div>
+            <table style={{ width:'100%', borderCollapse:'collapse' }}>
+              <thead><tr>{['Procedimento','Categoria','Hospitais cadastrados',''].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {procs.map(p => {
+                  const entries = store.getPricingForProcedure(p.id);
+                  return (
+                    <tr key={p.id}>
+                      <td style={{ ...S.td, fontWeight:500, fontSize:14 }}>{p.name}</td>
+                      <td style={S.td}><span style={{ fontSize:11, fontWeight:600, background:'var(--warm)', color:'var(--mid)', padding:'4px 10px', borderRadius:6 }}>{p.category}</span></td>
+                      <td style={S.td}>
+                        {entries.length === 0 ? (
+                          <span style={{ fontSize:12, color:'var(--light)' }}>Nenhum hospital cadastrado</span>
+                        ) : (
+                          <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+                            {entries.map(e => {
+                              const h = hospitals.find(hh=>hh.id===e.hospitalId);
+                              return h ? (
+                                <span key={e.id} style={{ fontSize:11, background:'#FFF3E4', color:'var(--caramel3)', padding:'4px 10px', borderRadius:6, fontWeight:500 }}>
+                                  {h.name}
+                                </span>
+                              ) : null;
+                            })}
+                          </div>
+                        )}
+                      </td>
+                      <td style={S.td}>
+                        <button onClick={()=>setPriceModal(p)} style={S.btnPri}>Gerenciar preços</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Print modal */}
+        {printOrder && <PrintModal order={printOrder} onClose={()=>setPrintOrder(null)} />}
+
+        {/* ══ MODAL PROCEDIMENTO ══ */}
+        {procModal && <ProcedureModal initial={procModal==='new'?null:procModal} onClose={()=>setProcModal(null)} onSave={()=>{ refresh(); setProcModal(null); }} />}
+
+        {/* ══ MODAL HOSPITAL ══ */}
+        {hospModal && <HospitalModal initial={hospModal==='new'?null:hospModal} onClose={()=>setHospModal(null)} onSave={()=>{ refresh(); setHospModal(null); }} />}
+
+        {/* ══ MODAL PREÇOS ══ */}
+        {priceModal && <PricingModal procedure={priceModal} hospitals={hospitals} onClose={()=>setPriceModal(null)} onSave={()=>{ refresh(); }} />}
+
       </div>
-      {printOrder && <PrintModal order={printOrder} onClose={() => setPrintOrder(null)} />}
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+//  Modal: Procedimento
+// ─────────────────────────────────────────────
+function ProcedureModal({ initial, onClose, onSave }) {
+  const [name, setName]   = useState(initial?.name     || '');
+  const [cat,  setCat]    = useState(initial?.category || PROC_CATEGORIES[0]);
+  const [desc, setDesc]   = useState(initial?.desc     || '');
+
+  const save = () => {
+    if (!name.trim()) return;
+    if (initial) store.updateProcedure(initial.id, { name, category:cat, desc });
+    else         store.addProcedure({ name, category:cat, desc });
+    onSave();
+  };
+
+  return (
+    <Modal title={initial ? 'Editar Procedimento' : 'Novo Procedimento'} onClose={onClose}>
+      <Field label="Nome do procedimento">
+        <input value={name} onChange={e=>setName(e.target.value)} placeholder="Ex: Rinoplastia" style={S.inp}
+          onFocus={e=>e.target.style.borderColor='var(--caramel)'} onBlur={e=>e.target.style.borderColor='var(--border)'} />
+      </Field>
+      <Field label="Categoria">
+        <select value={cat} onChange={e=>setCat(e.target.value)} style={S.inp}>
+          {PROC_CATEGORIES.map(c=><option key={c}>{c}</option>)}
+        </select>
+      </Field>
+      <Field label="Descrição">
+        <textarea value={desc} onChange={e=>setDesc(e.target.value)} rows={3} placeholder="Descrição breve do procedimento..."
+          style={{ ...S.inp, resize:'vertical', lineHeight:1.6 }}
+          onFocus={e=>e.target.style.borderColor='var(--caramel)'} onBlur={e=>e.target.style.borderColor='var(--border)'} />
+      </Field>
+      <div style={{ display:'flex', gap:10, justifyContent:'flex-end', marginTop:4 }}>
+        <button onClick={onClose} style={S.btnSec}>Cancelar</button>
+        <button onClick={save}    style={S.btnPri}>Salvar</button>
+      </div>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────
+//  Modal: Hospital
+// ─────────────────────────────────────────────
+function HospitalModal({ initial, onClose, onSave }) {
+  const [name,    setName]    = useState(initial?.name    || '');
+  const [address, setAddress] = useState(initial?.address || '');
+
+  const save = () => {
+    if (!name.trim()) return;
+    if (initial) store.updateHospital(initial.id, { name, address });
+    else         store.addHospital({ name, address });
+    onSave();
+  };
+
+  return (
+    <Modal title={initial ? 'Editar Hospital' : 'Novo Hospital'} onClose={onClose}>
+      <Field label="Nome do hospital">
+        <input value={name} onChange={e=>setName(e.target.value)} placeholder="Ex: Hospital São Rafael" style={S.inp}
+          onFocus={e=>e.target.style.borderColor='var(--caramel)'} onBlur={e=>e.target.style.borderColor='var(--border)'} />
+      </Field>
+      <Field label="Endereço">
+        <input value={address} onChange={e=>setAddress(e.target.value)} placeholder="Ex: Rua das Flores, 420 — BH, MG" style={S.inp}
+          onFocus={e=>e.target.style.borderColor='var(--caramel)'} onBlur={e=>e.target.style.borderColor='var(--border)'} />
+      </Field>
+      <div style={{ display:'flex', gap:10, justifyContent:'flex-end', marginTop:4 }}>
+        <button onClick={onClose} style={S.btnSec}>Cancelar</button>
+        <button onClick={save}    style={S.btnPri}>Salvar</button>
+      </div>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────
+//  Modal: Preços por Hospital
+// ─────────────────────────────────────────────
+function PricingModal({ procedure, hospitals, onClose, onSave }) {
+  const allEntries = store.getPricingForProcedure(procedure.id);
+
+  // local state: map hospitalId -> { avistaSem, avistaComPernoite, credito3xSem, credito3xComPernoite, active }
+  const initState = () => {
+    const m = {};
+    hospitals.forEach(h => {
+      const e = allEntries.find(en => en.hospitalId === h.id);
+      m[h.id] = e
+        ? { active:true, avistaSem:String(e.avistaSem), avistaComPernoite:String(e.avistaComPernoite), credito3xSem:String(e.credito3xSem), credito3xComPernoite:String(e.credito3xComPernoite) }
+        : { active:false, avistaSem:'', avistaComPernoite:'', credito3xSem:'', credito3xComPernoite:'' };
+    });
+    return m;
+  };
+
+  const [rows, setRows] = useState(initState);
+
+  const setRow = (hid, field, val) =>
+    setRows(prev => ({ ...prev, [hid]: { ...prev[hid], [field]: val } }));
+
+  const save = () => {
+    hospitals.forEach(h => {
+      const r = rows[h.id];
+      if (r.active) {
+        store.upsertPricing({
+          procedureId: procedure.id,
+          hospitalId:  h.id,
+          avistaSem:           parseFloat(r.avistaSem)           || 0,
+          avistaComPernoite:   parseFloat(r.avistaComPernoite)   || 0,
+          credito3xSem:        parseFloat(r.credito3xSem)        || 0,
+          credito3xComPernoite:parseFloat(r.credito3xComPernoite)|| 0,
+        });
+      } else {
+        store.deletePricing(procedure.id, h.id);
+      }
+    });
+    onSave();
+  };
+
+  return (
+    <Modal title={`Preços — ${procedure.name}`} onClose={onClose}>
+      <p style={{ fontSize:13, color:'var(--mid)', marginBottom:20, lineHeight:1.6 }}>
+        Ative os hospitais em que este procedimento é realizado e preencha os valores para cada forma de pagamento.
+      </p>
+
+      <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+        {hospitals.map(h => {
+          const r = rows[h.id];
+          return (
+            <div key={h.id} style={{ border:'1.5px solid', borderColor: r.active?'var(--caramel)':'var(--border)', borderRadius:10, overflow:'hidden', transition:'border-color .2s' }}>
+              {/* Hospital header */}
+              <div style={{ padding:'12px 16px', background:r.active?'#FFF8EE':'var(--warm)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                <div>
+                  <div style={{ fontSize:14, fontWeight:600, color:'var(--dark)' }}>{h.name}</div>
+                  <div style={{ fontSize:11, color:'var(--light)', marginTop:2 }}>{h.address}</div>
+                </div>
+                <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer', userSelect:'none' }}>
+                  <span style={{ fontSize:12, color: r.active?'var(--caramel3)':'var(--light)', fontWeight:500 }}>
+                    {r.active ? 'Ativo' : 'Inativo'}
+                  </span>
+                  <div onClick={()=>setRow(h.id,'active',!r.active)} style={{
+                    width:38, height:22, borderRadius:11,
+                    background:r.active?'var(--caramel)':'var(--border)',
+                    position:'relative', cursor:'pointer', transition:'background .2s',
+                  }}>
+                    <div style={{ position:'absolute', top:3, left: r.active?18:3, width:16, height:16, borderRadius:'50%', background:'white', transition:'left .2s', boxShadow:'0 1px 4px rgba(0,0,0,.2)' }} />
+                  </div>
+                </label>
+              </div>
+
+              {/* Preços */}
+              {r.active && (
+                <div style={{ padding:16 }}>
+                  {/* À vista */}
+                  <div style={{ fontSize:11, fontWeight:700, color:'var(--caramel)', textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:10 }}>
+                    À vista — Pix ou Dinheiro
+                  </div>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:16 }}>
+                    <MiniInput label="Sem pernoite (R$)"  value={r.avistaSem}         onChange={v=>setRow(h.id,'avistaSem',v)}         placeholder="0,00" type="number" />
+                    <MiniInput label="Com pernoite (R$)"  value={r.avistaComPernoite} onChange={v=>setRow(h.id,'avistaComPernoite',v)} placeholder="0,00" type="number" />
+                  </div>
+
+                  {/* 3x */}
+                  <div style={{ fontSize:11, fontWeight:700, color:'var(--caramel)', textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:10 }}>
+                    Até 3x no Cartão de Crédito
+                  </div>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                    <MiniInput label="Sem pernoite (R$)"  value={r.credito3xSem}          onChange={v=>setRow(h.id,'credito3xSem',v)}          placeholder="0,00" type="number" />
+                    <MiniInput label="Com pernoite (R$)"  value={r.credito3xComPernoite}  onChange={v=>setRow(h.id,'credito3xComPernoite',v)}  placeholder="0,00" type="number" />
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ display:'flex', gap:10, justifyContent:'flex-end', marginTop:24 }}>
+        <button onClick={onClose} style={S.btnSec}>Cancelar</button>
+        <button onClick={save}    style={S.btnPri}>Salvar preços</button>
+      </div>
+    </Modal>
   );
 }
