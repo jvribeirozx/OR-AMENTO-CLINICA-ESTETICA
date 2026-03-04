@@ -464,9 +464,7 @@ export default function AdminDashboard() {
           </div>
         )}
       </div>
-    </div>
-
-      {/* ── MODAL DE IMPRESSÃO ── */}
       {printOrder && <PrintModal order={printOrder} onClose={() => setPrintOrder(null)} />}
+    </div>
   );
 }
