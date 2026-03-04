@@ -1,3 +1,219 @@
+
+// ─────────────────────────────────────────────
+//  Componente de impressão de orçamento
+// ─────────────────────────────────────────────
+function PrintModal({ order, onClose }) {
+  const handlePrint = () => {
+    const el = document.getElementById('print-doc');
+    const orig = document.body.innerHTML;
+    document.body.innerHTML = el.outerHTML;
+    window.print();
+    document.body.innerHTML = orig;
+    window.location.reload();
+  };
+
+  const fmtV = v => v.toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
+  const today = new Date().toLocaleDateString('pt-BR');
+
+  return (
+    <div style={{
+      position:'fixed', inset:0, zIndex:1000,
+      background:'rgba(0,0,0,0.55)', display:'flex',
+      alignItems:'flex-start', justifyContent:'center',
+      padding:'32px 16px', overflowY:'auto',
+    }} onClick={e => { if(e.target===e.currentTarget) onClose(); }}>
+
+      <div style={{ background:'white', borderRadius:16, width:'100%', maxWidth:720,
+        boxShadow:'0 24px 64px rgba(0,0,0,.25)', overflow:'hidden' }}>
+
+        {/* Modal header */}
+        <div style={{ background:'#2C2416', padding:'18px 28px',
+          display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <div style={{ fontFamily:'Cormorant Garamond,serif', fontSize:20, color:'white', fontWeight:500 }}>
+            Orçamento #{order.id}
+          </div>
+          <div style={{ display:'flex', gap:10 }}>
+            <button onClick={handlePrint} style={{
+              padding:'8px 20px', borderRadius:8, border:'none',
+              background:'#C8873A', color:'white', fontSize:13, fontWeight:600, cursor:'pointer',
+            }}>🖨 Imprimir / Salvar PDF</button>
+            <button onClick={onClose} style={{
+              padding:'8px 14px', borderRadius:8,
+              border:'1px solid rgba(255,255,255,.2)', background:'transparent',
+              color:'white', fontSize:13, cursor:'pointer',
+            }}>✕ Fechar</button>
+          </div>
+        </div>
+
+        {/* Documento imprimível */}
+        <div id="print-doc" style={{ padding:'36px 40px', fontFamily:'DM Sans, sans-serif' }}>
+
+          {/* Cabeçalho do doc */}
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:28, paddingBottom:20, borderBottom:'2px solid #C8873A' }}>
+            <div>
+              <div style={{ fontFamily:'Cormorant Garamond,serif', fontSize:28, fontWeight:600, color:'#2C2416', marginBottom:4 }}>
+                Clínica Estética
+              </div>
+              <div style={{ fontSize:12, color:'#A08B74' }}>Sistema de Orçamentos</div>
+            </div>
+            <div style={{ textAlign:'right' }}>
+              <div style={{ fontSize:11, color:'#A08B74', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:4 }}>Orçamento</div>
+              <div style={{ fontFamily:'Cormorant Garamond,serif', fontSize:24, fontWeight:600, color:'#C8873A' }}>#{order.id}</div>
+              <div style={{ fontSize:12, color:'#A08B74', marginTop:4 }}>Emitido em {order.createdAt}</div>
+              <div style={{ fontSize:12, color:'#A08B74' }}>Validade: 30 dias</div>
+            </div>
+          </div>
+
+          {/* Dados do paciente */}
+          <div style={{ marginBottom:24 }}>
+            <div style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.1em', color:'#A08B74', fontWeight:600, marginBottom:10 }}>Paciente</div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'8px 24px' }}>
+              {[
+                ['Nome', order.client.name],
+                ['CPF', order.client.cpf],
+                ['Telefone', order.client.phone],
+                ['E-mail', order.client.email],
+                ['Responsável', order.employee],
+                ['Data', order.createdAt],
+              ].map(([k,v]) => (
+                <div key={k}>
+                  <div style={{ fontSize:10, color:'#A08B74', fontWeight:600, marginBottom:2 }}>{k}</div>
+                  <div style={{ fontSize:13, color:'#2C2416', fontWeight:500 }}>{v}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ height:1, background:'#E8DDD0', marginBottom:24 }} />
+
+          {/* Procedimentos */}
+          <div style={{ marginBottom:24 }}>
+            <div style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.1em', color:'#A08B74', fontWeight:600, marginBottom:10 }}>Procedimentos</div>
+            <table style={{ width:'100%', borderCollapse:'collapse' }}>
+              <thead>
+                <tr style={{ background:'#F5EDE0' }}>
+                  <th style={{ padding:'9px 12px', textAlign:'left', fontSize:11, color:'#6B5B47', fontWeight:600 }}>Procedimento</th>
+                  <th style={{ padding:'9px 12px', textAlign:'left', fontSize:11, color:'#6B5B47', fontWeight:600 }}>Categoria</th>
+                  <th style={{ padding:'9px 12px', textAlign:'right', fontSize:11, color:'#6B5B47', fontWeight:600 }}>Valor</th>
+                </tr>
+              </thead>
+              <tbody>
+                {order.items.map((item, i) => (
+                  <tr key={item.id} style={{ background: i%2===0 ? 'white' : '#FAF7F2' }}>
+                    <td style={{ padding:'9px 12px', fontSize:13, color:'#2C2416' }}>{item.name}</td>
+                    <td style={{ padding:'9px 12px', fontSize:12, color:'#6B5B47' }}>{item.category}</td>
+                    <td style={{ padding:'9px 12px', textAlign:'right', fontSize:13, color:'#6B5B47' }}>{fmtV(item.price)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Hospital */}
+          {order.hospital && (
+            <div style={{ marginBottom:24 }}>
+              <div style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.1em', color:'#A08B74', fontWeight:600, marginBottom:10 }}>Hospital</div>
+              <div style={{ background:'#FAF7F2', borderRadius:8, padding:'12px 16px', display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'8px 24px' }}>
+                <div>
+                  <div style={{ fontSize:10, color:'#A08B74', marginBottom:2 }}>Hospital</div>
+                  <div style={{ fontSize:13, color:'#2C2416', fontWeight:500 }}>{order.hospital.name}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize:10, color:'#A08B74', marginBottom:2 }}>Pagamento</div>
+                  <div style={{ fontSize:13, color:'#2C2416', fontWeight:500 }}>{order.hospital.payType}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize:10, color:'#A08B74', marginBottom:2 }}>Pernoite</div>
+                  <div style={{ fontSize:13, color:'#2C2416', fontWeight:500 }}>{order.hospital.pernoite ? 'Com pernoite' : 'Sem pernoite'}</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Anestesia */}
+          {order.anestesia && (
+            <div style={{ marginBottom:24 }}>
+              <div style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.1em', color:'#A08B74', fontWeight:600, marginBottom:10 }}>Anestesia</div>
+              <div style={{ background:'#FAF7F2', borderRadius:8, padding:'12px 16px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px 24px' }}>
+                <div>
+                  <div style={{ fontSize:10, color:'#A08B74', marginBottom:2 }}>Tempo</div>
+                  <div style={{ fontSize:13, color:'#2C2416', fontWeight:500 }}>{order.anestesia.tempo}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize:10, color:'#A08B74', marginBottom:2 }}>Pagamento</div>
+                  <div style={{ fontSize:13, color:'#2C2416', fontWeight:500 }}>{order.anestesia.payType}</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Totais */}
+          <div style={{ background:'#2C2416', borderRadius:10, padding:'16px 20px', marginBottom:28 }}>
+            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:'rgba(255,255,255,.6)' }}>
+                <span>Procedimentos</span>
+                <span>{fmtV(order.items.reduce((s,i)=>s+i.price,0))}</span>
+              </div>
+              {order.hospital && (
+                <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:'rgba(255,255,255,.6)' }}>
+                  <span>Hospital</span><span>{fmtV(order.hospital.valor)}</span>
+                </div>
+              )}
+              {order.anestesia && (
+                <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:'rgba(255,255,255,.6)' }}>
+                  <span>Anestesia</span><span>{fmtV(order.anestesia.valor)}</span>
+                </div>
+              )}
+              <div style={{ height:1, background:'rgba(255,255,255,.15)', margin:'4px 0' }} />
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                <span style={{ fontSize:14, color:'rgba(255,255,255,.8)', fontWeight:600 }}>TOTAL GERAL</span>
+                <span style={{ fontFamily:'Cormorant Garamond,serif', fontSize:24, fontWeight:600, color:'#E8A55A' }}>{fmtV(order.total)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Observações */}
+          {order.obs && (
+            <div style={{ marginBottom:24 }}>
+              <div style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.1em', color:'#A08B74', fontWeight:600, marginBottom:8 }}>Observações</div>
+              <div style={{ background:'#FAF7F2', borderRadius:8, padding:'12px 16px', fontSize:13, color:'#6B5B47', lineHeight:1.7 }}>{order.obs}</div>
+            </div>
+          )}
+
+          {/* Área de assinatura */}
+          <div style={{ borderTop:'1px solid #E8DDD0', paddingTop:24 }}>
+            <div style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.1em', color:'#A08B74', fontWeight:600, marginBottom:16 }}>Assinatura</div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:32 }}>
+              {/* Cliente */}
+              <div>
+                <div style={{ height:64, borderBottom:'1.5px solid #2C2416', marginBottom:10 }} />
+                <div style={{ fontSize:12, color:'#6B5B47', marginBottom:3 }}>{order.client.name}</div>
+                <div style={{ fontSize:11, color:'#A08B74' }}>Paciente — CPF: {order.client.cpf}</div>
+                <div style={{ fontSize:11, color:'#A08B74', marginTop:4 }}>Data: _____ / _____ / _______</div>
+              </div>
+              {/* Responsável */}
+              <div>
+                <div style={{ height:64, borderBottom:'1.5px solid #2C2416', marginBottom:10 }} />
+                <div style={{ fontSize:12, color:'#6B5B47', marginBottom:3 }}>{order.employee}</div>
+                <div style={{ fontSize:11, color:'#A08B74' }}>Responsável pelo atendimento</div>
+                <div style={{ fontSize:11, color:'#A08B74', marginTop:4 }}>Data: _____ / _____ / _______</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Rodapé */}
+          <div style={{ marginTop:28, paddingTop:14, borderTop:'1px solid #E8DDD0', textAlign:'center' }}>
+            <div style={{ fontSize:11, color:'#A08B74' }}>
+              Clínica Estética — Documento gerado em {today} — Válido por 30 dias
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Header from '../components/Header';
@@ -13,6 +229,7 @@ export default function AdminDashboard() {
   const [editId, setEditId]     = useState(null);
   const [editVal, setEditVal]   = useState('');
   const [copied, setCopied]     = useState(null);
+  const [printOrder, setPrintOrder] = useState(null);
   const [highlight, setHL]      = useState(null);
 
   useEffect(() => {
@@ -165,6 +382,14 @@ export default function AdminDashboard() {
                               </button>
                             )}
                             <button
+                              onClick={() => setPrintOrder(o)}
+                              style={{ padding:'6px 12px', borderRadius:7, border:'1.5px solid var(--border)', background:'white', color:'var(--mid)', fontSize:12, fontWeight:600, transition:'all .2s', whiteSpace:'nowrap' }}
+                              onMouseOver={e => e.currentTarget.style.borderColor='var(--caramel)'}
+                              onMouseOut={e  => e.currentTarget.style.borderColor='var(--border)'}
+                            >
+                              🖨 Imprimir
+                            </button>
+                            <button
                               onClick={() => navigate(`/assinar/${o.id}`)}
                               style={{ padding:'6px 12px', borderRadius:7, border:'1.5px solid var(--border)', background:'white', color:'var(--mid)', fontSize:12, fontWeight:600, transition:'all .2s', whiteSpace:'nowrap' }}
                               onMouseOver={e => e.currentTarget.style.borderColor='var(--caramel)'}
@@ -240,5 +465,8 @@ export default function AdminDashboard() {
         )}
       </div>
     </div>
+
+      {/* ── MODAL DE IMPRESSÃO ── */}
+      {printOrder && <PrintModal order={printOrder} onClose={() => setPrintOrder(null)} />}
   );
 }
