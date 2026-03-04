@@ -53,27 +53,36 @@ function MiniInput({ label, value, onChange, placeholder, type='text' }) {
 //  Print Modal
 // ─────────────────────────────────────────────
 function PrintModal({ order, onClose }) {
-  const handlePrint = () => {
-    const el = document.getElementById('print-doc');
-    const style = document.createElement('style');
-    style.id = '__ps__';
-    style.innerHTML = `@media print { @page { margin:12mm; size:A4; } body > *:not(#__pr__){ display:none!important; } #__pr__{ display:block!important; } }`;
-    document.head.appendChild(style);
-    const container = document.createElement('div');
-    container.id = '__pr__';
-    container.style.cssText = 'display:none;position:fixed;inset:0;background:white;z-index:99999;font-family:DM Sans,sans-serif;padding:32px 40px;';
-    container.innerHTML = el.innerHTML;
-    document.body.appendChild(container);
-    const before = () => { container.style.display = 'block'; };
-    const after  = () => {
-      container.remove();
-      document.getElementById('__ps__')?.remove();
-      window.removeEventListener('beforeprint', before);
-      window.removeEventListener('afterprint',  after);
-    };
-    window.addEventListener('beforeprint', before);
-    window.addEventListener('afterprint',  after);
-    window.print();
+  const [loading, setLoading] = React.useState(false);
+
+  const handlePrint = async () => {
+    setLoading(true);
+    try {
+      // Load html2pdf dynamically
+      await new Promise((resolve, reject) => {
+        if (window.html2pdf) { resolve(); return; }
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+        s.onload = resolve;
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+
+      const el = document.getElementById('print-doc');
+      await window.html2pdf().set({
+        margin:        [10, 10, 10, 10],
+        filename:      `Orcamento-${order.id}.pdf`,
+        image:         { type: 'jpeg', quality: 0.98 },
+        html2canvas:   { scale: 2, useCORS: true, logging: false },
+        jsPDF:         { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak:     { mode: ['avoid-all'] },
+      }).from(el).save();
+    } catch(e) {
+      console.error(e);
+      alert('Erro ao gerar PDF. Tente novamente.');
+    } finally {
+      setLoading(false);
+    }
   };
   const fmtV = v => Number(v||0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
   const today = new Date().toLocaleDateString('pt-BR');
@@ -85,7 +94,7 @@ function PrintModal({ order, onClose }) {
         <div style={{ background:'#2C2416', padding:'16px 24px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
           <span style={{ fontFamily:'Cormorant Garamond,serif', fontSize:19, color:'white', fontWeight:500 }}>Orçamento #{order.id}</span>
           <div style={{ display:'flex', gap:10 }}>
-            <button onClick={handlePrint} style={{ ...S.btnPri }}>🖨 Imprimir / PDF</button>
+            <button onClick={handlePrint} disabled={loading} style={{ ...S.btnPri, opacity: loading ? 0.7 : 1 }}>{loading ? '⏳ Gerando PDF...' : '⬇ Baixar PDF'}</button>
             <button onClick={onClose} style={{ padding:'9px 14px', borderRadius:8, border:'1px solid rgba(255,255,255,.2)', background:'transparent', color:'white', fontSize:13, cursor:'pointer' }}>✕</button>
           </div>
         </div>
