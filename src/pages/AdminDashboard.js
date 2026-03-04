@@ -5,11 +5,38 @@
 function PrintModal({ order, onClose }) {
   const handlePrint = () => {
     const el = document.getElementById('print-doc');
-    const orig = document.body.innerHTML;
-    document.body.innerHTML = el.outerHTML;
+    // Inject print-specific styles that suppress browser headers/footers
+    const style = document.createElement('style');
+    style.id = '__print_style__';
+    style.innerHTML = `
+      @media print {
+        @page { margin: 12mm; size: A4; }
+        body > *:not(#__print_root__) { display: none !important; }
+        #__print_root__ { display: block !important; }
+      }
+    `;
+    document.head.appendChild(style);
+
+    // Create a hidden print container
+    const container = document.createElement('div');
+    container.id = '__print_root__';
+    container.style.cssText = 'display:none;position:fixed;inset:0;background:white;z-index:99999;font-family:DM Sans,sans-serif;';
+    container.innerHTML = el.innerHTML;
+    document.body.appendChild(container);
+
+    // Show it only during print
+    const beforePrint = () => { container.style.display = 'block'; };
+    const afterPrint  = () => {
+      container.style.display = 'none';
+      document.body.removeChild(container);
+      const s = document.getElementById('__print_style__');
+      if (s) s.remove();
+      window.removeEventListener('beforeprint', beforePrint);
+      window.removeEventListener('afterprint',  afterPrint);
+    };
+    window.addEventListener('beforeprint', beforePrint);
+    window.addEventListener('afterprint',  afterPrint);
     window.print();
-    document.body.innerHTML = orig;
-    window.location.reload();
   };
 
   const fmtV = v => v.toLocaleString('pt-BR', { style:'currency', currency:'BRL' });

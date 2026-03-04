@@ -42,3 +42,18 @@ a { text-decoration: none; color: inherit; }
 }
 .fade-up { animation: fadeUp 0.4s ease both; }
 .fade-in { animation: fadeIn 0.3s ease both; }
+
+/* Remove cabeçalho/rodapé do browser na impressão */
+@media print {
+  @page {
+    margin: 12mm;
+    size: A4 portrait;
+  }
+  /* Esconde tudo exceto o container de impressão */
+  body > *:not(#__print_root__) {
+    display: none !important;
+  }
+  #__print_root__ {
+    display: block !important;
+  }
+}
